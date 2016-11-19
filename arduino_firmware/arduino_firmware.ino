@@ -41,9 +41,52 @@ int CARRIAGE_ENCODER_COUNT = 0;
 
 // Struct containing one command.
 typedef struct node {
-  String command;
+  char id;
+  int amt;
   struct node *next;
 } node;
+/*
+ * id field defines the direction of movement or part to move.
+ * amt defines the amount the part should move to.
+ * Various part ids are defines below
+ */
+
+/*
+ * X is the direction along the rails
+ * amt for X signifies the encoder marking to move to
+ */
+#define X_ID 'X'
+
+/*
+ * Y is direction along the gantry
+ * id for Y signifies the encoder marking to move to
+ */
+#define Y_ID 'Y'
+
+/*
+ * Z is the direction along the rack
+ * amt for Z signifies the encoder marking to move to
+ */
+#define Z_ID 'Z'
+
+/*
+ * GANTRY_LIGHT_ID
+ * if amt is non-zero the gantry lights are turned on
+ */
+#define GANTRY_LIGHT_ID 'L'
+
+/*
+ * SOLENOID_VALVE_ID
+ * amt specifies the time in ms the solenoid valve is 
+ * turned on
+ */
+#define SOLENOID_VALVE_ID 'V'
+
+/*
+ * AIR_PUMP_ID
+ * if amt is non-zero air pump is turned on
+ */
+ #define AIR_PUMP_ID 'A'
 
 // HEAD pointer for the queue
 volatile node* HEAD = NULL;
@@ -52,7 +95,8 @@ volatile node* HEAD = NULL;
 volatile node* TAIL = NULL;
 
 // temp variable to store incoming command
-String command_tmp = "";
+char id_tmp = "";
+int amt_tmp = 0;
 
 // indicator variable to check when incoming 
 // command is fully received
@@ -60,9 +104,10 @@ bool commandReceived = false;
 
 
 // insert method for instruction queue
-void q(String command) {
+void q(char id, int amt) {
   node * temp = (node*) malloc(sizeof(node));
-  temp->command = command;
+  temp->id = id;
+  temp->amt = amt;
   temp->next = NULL;
   if (HEAD==NULL) {
     HEAD = temp;
@@ -73,12 +118,18 @@ void q(String command) {
   }
 }
 
-String dq() {
+// Stores value of dequeued id
+char id = '\0';
+
+// Stores value of dequeued amt
+int amt = 0;
+
+void dq() {
   node * temp = HEAD;
   HEAD = temp->next;
-  String ret = temp->command;
+  id = temp->id;
+  amt = temp->amt;
   free(temp);
-  return ret;
 }
 
 // method to print contents of the instruction queue
@@ -88,7 +139,7 @@ void printq() {
   Serial.println("Instruction Queue:");
   Serial.println("==================");
   while(temp=temp->next) {
-    Serial.println(temp->command);
+    Serial.println(temp->id+" "+temp->amt);
   }
   Serial.println("==================");
 }
@@ -102,9 +153,6 @@ bool isempty() {
 }
 
 void setup() {
-  // reserve 16 bytes for command_tmp
-  command_tmp.reserve(16);
-  
   // put your setup code here, to run once:
   // setting GPIO 2 to 7 as outputs
   DDRD = 0xfc;
@@ -131,12 +179,24 @@ void loop() {
   // check if command is received
   // if yes, queue it
   if (commandReceived) {
-    q(command_tmp);
-    command_tmp = "";
+    q(id_tmp,amt_tmp);
     commandReceived = false;
   }
 
-  //check input from encoders
+  // check input from encoders
+  // increment count if negative edge is encountered
+  if (analogRead(LEFT_ENCODER)<LEFT_ENCODER_THRESH && LEFT_ENCODER_PREV) {
+    LEFT_ENCODER_COUNT++;
+    LEFT_ENCODER_PREV = false;
+  } else {
+    LEFT_ENCODER_PREV = true;
+  }
+  if (analogRead(RIGHT_ENCODER)<RIGHT_ENCODER_THRESH && RIGHT_ENCODER_PREV) {
+    RIGHT_ENCODER_COUNT++;
+    RIGHT_ENCODER_PREV = false;
+  } else {
+    RIGHT_ENCODER_PREV = true;
+  }
   
 }
 
@@ -145,8 +205,10 @@ void serialEvent() {
     char inChar = (char) Serial.read();
     if (inChar == '\n') {
       commandReceived = true;
+    } else if (inChar>='0' && inChar<='9') {
+      amt_tmp = 10*amt_tmp+(int)(inChar-48);
     } else {
-      command_tmp += inChar;
+      id_tmp = inChar;
     }
   }
 }
