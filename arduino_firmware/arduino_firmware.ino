@@ -1,4 +1,5 @@
 #include <avr/io.h>
+#include <Stepper.h>
 
 // Declarations for pin usage
 #define CARRIAGE_MOTOR_2 11
@@ -18,13 +19,22 @@
 #define RIGHT_ENCODER_THRESH 512
 #define CARRIAGE_ENCODER_THRESH 512
 
-//variables for storing encoder state
+// variables for storing encoder state
 bool LEFT_ENCODER_PREV = false;
 bool RIGHT_ENCODER_PREV = false;
 bool CARRIAGE_ENCODER_PREV = false;
 int LEFT_ENCODER_COUNT = 0;
 int RIGHT_ENCODER_COUNT = 0;
 int CARRIAGE_ENCODER_COUNT = 0;
+
+// Declarations for the z-axis stepper motor
+#define stepsPerRevolution 200
+#define STEPPER_PIN_1 A3
+#define STEPPER_PIN_2 A4
+#define STEPPER_PIN_3 A5
+#define STEPPER_PIN_4 A6
+#define STEPPER_SPEED 40
+Stepper z_stepper(stepsPerRevolution, STEPPER_PIN_1, STEPPER_PIN_2, STEPPER_PIN_3, STEPPER_PIN_4);
 
 /*
  *  Instruction queue structure is as follows
@@ -70,10 +80,10 @@ typedef struct node {
 #define Z_ID 'Z'
 
 /*
- * GANTRY_LIGHT_ID
+ * GANTRYS_LIGHT_ID
  * if amt is non-zero the gantry lights are turned on
  */
-#define GANTRY_LIGHT_ID 'L'
+#define GANTRY_LIGHTS_ID 'L'
 
 /*
  * SOLENOID_VALVE_ID
@@ -88,6 +98,13 @@ typedef struct node {
  */
  #define AIR_PUMP_ID 'A'
 
+ /*
+  * DEBUG_ID
+  * prints debugging unfo to serial irrespective of amt
+  */
+#define DEBUG_ID 'D'
+
+  
 // HEAD pointer for the queue
 volatile node* HEAD = NULL;
 
@@ -102,6 +119,9 @@ int amt_tmp = 0;
 // command is fully received
 bool commandReceived = false;
 
+// indicator variable to check if the current
+// task is complete
+bool taskComplete = true;
 
 // insert method for instruction queue
 void q(char id, int amt) {
@@ -145,11 +165,11 @@ void printq() {
 }
 
 // method to check if instruction queue is empty
-bool isempty() {
+bool qnotempty() {
   if (HEAD==NULL) {
-    return true;
+    return false;
   }
-  return false;
+  return true;
 }
 
 void setup() {
@@ -163,6 +183,9 @@ void setup() {
   // Set every used GPIO to HIGH because negative logic is used
   PORTD = 0xfc;
   PORTB = 0x0e;
+
+  // Initialisers for z_stepper
+  z_stepper.setSpeed(STEPPER_SPEED);
   
   // Initialising serial for communication and debugging
   Serial.begin(9600);
@@ -183,19 +206,35 @@ void loop() {
     commandReceived = false;
   }
 
-  // check input from encoders
-  // increment count if negative edge is encountered
-  if (analogRead(LEFT_ENCODER)<LEFT_ENCODER_THRESH && LEFT_ENCODER_PREV) {
-    LEFT_ENCODER_COUNT++;
-    LEFT_ENCODER_PREV = false;
-  } else {
-    LEFT_ENCODER_PREV = true;
-  }
-  if (analogRead(RIGHT_ENCODER)<RIGHT_ENCODER_THRESH && RIGHT_ENCODER_PREV) {
-    RIGHT_ENCODER_COUNT++;
-    RIGHT_ENCODER_PREV = false;
-  } else {
-    RIGHT_ENCODER_PREV = true;
+  // pull tasks from instruction queue
+  if (qnotempty()) {
+    dq();
+
+    // check ids
+    if (id==DEBUG_ID) {
+      Serial.println("Printing Debug info...");
+      Serial.println("Current id="+id);
+      Serial.println("Current amt="+amt);
+      printq();
+    } else if (id==GANTRY_LIGHTS_ID) {
+      if (amt!=0) {
+        digitalWrite(GANTRY_LIGHTS, LOW);
+      } else {
+        digitalWrite(GANTRY_LIGHTS, HIGH);
+      }
+    } else if (id==SOLENOID_VALVE_ID) {
+      digitalWrite(SOLENOID_VALVE_RELAY, LOW);
+      delay(amt);
+      digitalWrite(SOLENOID_VALVE_RELAY, HIGH);
+    } else if (id==AIR_PUMP_ID) {
+      if (amt!=0) {
+        digitalWrite(AIR_PUMP_RELAY, LOW);
+      } else {
+        digitalWrite(AIR_PUMP_RELAY, HIGH);
+      }
+    } else if (id==Z_ID) {
+      
+    }
   }
   
 }
