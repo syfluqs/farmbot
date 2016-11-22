@@ -26,12 +26,16 @@ bool CARRIAGE_ENCODER_PREV = false;
 int LEFT_ENCODER_COUNT = 0;
 int RIGHT_ENCODER_COUNT = 0;
 int CARRIAGE_ENCODER_COUNT = 0;
-int n=0;
+int count=0;
 
 // pwm parameters for motors
-#define JOHNSON_LEFT_SPEED 140
-#define JOHNSON_RIGHT_SPEED 140
-#define CARRIAGE_MOTOR_SPEED 140
+// use fast values by default, only use slow for compensation
+#define JOHNSON_LEFT_SPEED_SLOW 140
+#define JOHNSON_LEFT_SPEED_FAST 200
+#define JOHNSON_RIGHT_SPEED_SLOW 140
+#define JOHNSON_RIGHT_SPEED_FAST 200
+#define CARRIAGE_MOTOR_SPEED_SLOW 140
+#define CARRIAGE_MOTOR_SPEED_FAST 200
 
 // Declarations for the z-axis stepper motor
 #define stepsPerRevolution 48
@@ -266,22 +270,113 @@ void loop() {
       Serial.println(amt);
       delay(amt);
       Serial.println("wait over");
+      
     } else if (id==X_ID) {
       // x-direction is driven by johnson motors
-      if (amt > count) {
-        //move forward till count reaches amt
-        while (count<=amt) {
-          
+      bool movement_not_complete = true;
+      bool left_enc = (analogRead(LEFT_ENCODER)>LEFT_ENCODER_THRESH);
+      bool right_enc = (analogRead(RIGHT_ENCODER)>RIGHT_ENCODER_THRESH);
+      while (movement_not_complete) {
+        // move till count reaches amt
+        // only one encoder is used so, there is no sense of direction
+        // left encoder is the main encoder to keep track of count
+        // right encoder is the follower, which is kept in sync with the 
+        // left encoder
+        
+        // get analog values from encoder and compare with threshold
+        left_enc = (analogRead(LEFT_ENCODER)>LEFT_ENCODER_THRESH);
+        right_enc = (analogRead(RIGHT_ENCODER)>RIGHT_ENCODER_THRESH);
+
+        if (amt > LEFT_ENCODER_COUNT) {
+          // amt is greater than LEFT_ENCODER_COUNT, move forward
+          if (LEFT_ENCODER_PREV != left_enc) {
+            LEFT_ENCODER_COUNT++;
+            LEFT_ENCODER_PREV = left_enc;
+          }
+          if (RIGHT_ENCODER_PREV != right_enc) {
+            RIGHT_ENCODER_COUNT++;
+            RIGHT_ENCODER_PREV = right_enc;
+          }
+          // check if both the counts are equal
+          // if not increase the speed of one motor to compensate
+          if (LEFT_ENCODER_COUNT > RIGHT_ENCODER_COUNT) {
+            // left motor is ahead of right, make left slow
+            analogWrite(JOHNSON_RIGHT_1, JOHNSON_RIGHT_SPEED_FAST);
+            analogWrite(JOHNSON_RIGHT_2, 0);
+            analogWrite(JOHNSON_LEFT_1, JOHNSON_LEFT_SPEED_SLOW);
+            analogWrite(JOHNSON_LEFT_2, 0);
+          } else if (LEFT_ENCODER_COUNT < RIGHT_ENCODER_COUNT) {
+            // right motor is ahead of left, make right slow
+            analogWrite(JOHNSON_RIGHT_1, JOHNSON_RIGHT_SPEED_SLOW);
+            analogWrite(JOHNSON_RIGHT_2, 0);
+            analogWrite(JOHNSON_LEFT_1, JOHNSON_LEFT_SPEED_FAST);
+            analogWrite(JOHNSON_LEFT_2, 0);
+          } else {
+            analogWrite(JOHNSON_RIGHT_1, JOHNSON_RIGHT_SPEED_FAST);
+            analogWrite(JOHNSON_RIGHT_2, 0);
+            analogWrite(JOHNSON_LEFT_1, JOHNSON_LEFT_SPEED_FAST);
+            analogWrite(JOHNSON_LEFT_2, 0);
+          }
+        } else if (amt < LEFT_ENCODER_COUNT ) {
+          // amt is less than LEFT_ENCODER_COUNT, move backward
+          if (LEFT_ENCODER_PREV != left_enc) {
+            LEFT_ENCODER_COUNT--;
+            LEFT_ENCODER_PREV = left_enc;
+          }
+          if (RIGHT_ENCODER_PREV != right_enc) {
+            RIGHT_ENCODER_COUNT--;
+            RIGHT_ENCODER_PREV = right_enc;
+          }
+          // check if both the counts are equal
+          // if not increase the speed of one motor to compensate
+          if (LEFT_ENCODER_COUNT > RIGHT_ENCODER_COUNT) {
+            // left motor is ahead of right, make left slow
+            analogWrite(JOHNSON_RIGHT_1, 0);
+            analogWrite(JOHNSON_RIGHT_2, JOHNSON_RIGHT_SPEED_FAST);
+            analogWrite(JOHNSON_LEFT_1, 0);
+            analogWrite(JOHNSON_LEFT_2, JOHNSON_LEFT_SPEED_SLOW);
+          } else if (LEFT_ENCODER_COUNT < RIGHT_ENCODER_COUNT) {
+            // right motor is ahead of left, make right slow
+            analogWrite(JOHNSON_RIGHT_1, 0);
+            analogWrite(JOHNSON_RIGHT_2, JOHNSON_RIGHT_SPEED_SLOW);
+            analogWrite(JOHNSON_LEFT_1, 0);
+            analogWrite(JOHNSON_LEFT_2, JOHNSON_LEFT_SPEED_FAST);
+          } else {
+            analogWrite(JOHNSON_RIGHT_1, 0);
+            analogWrite(JOHNSON_RIGHT_2, JOHNSON_RIGHT_SPEED_FAST);
+            analogWrite(JOHNSON_LEFT_1, 0);
+            analogWrite(JOHNSON_LEFT_2, JOHNSON_LEFT_SPEED_FAST);
+          }
+        } else {
+          movement_not_complete = false;
         }
       }
     } else if (id==Y_ID) {
-      
+      // movement in y direction
+      bool movement_not_complete = true;
+      bool enc = (analogRead(CARRIAGE_ENCODER)>CARRIAGE_ENCODER_THRESH);
+      while (movement_not_complete) {
+        // get analog values from CARRIAGE ENCODER and threshold them
+        enc = (analogRead(CARRIAGE_ENCODER)>CARRIAGE_ENCODER_THRESH);
+        if (amt > CARRIAGE_ENCODER_COUNT) {
+          // move the carriage forward
+          if (CARRIAGE_ENCODER_PREV != enc) {
+            CARRIAGE_ENCODER_COUNT++;
+            CARRIAGE_ENCODER_PREV = enc;
+          }
+        } else if ( amt < CARRIAGE_ENCODER_COUNT) {
+          // move the carriage backward
+          if (CARRIAGE_ENCODER_PREV != enc) {
+            CARRIAGE_ENCODER_COUNT--;
+            CARRIAGE_ENCODER_PREV = enc;
+          }
+        } else {
+          movement_not_complete = false;
+        }
+      }
     } else {
       Serial.println("Invalid keyword");
     }
-    Serial.println("===");
-    Serial.println(++n);
-    Serial.println("===");
   }
   
 }
