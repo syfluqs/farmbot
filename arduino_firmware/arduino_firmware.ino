@@ -14,7 +14,7 @@
 #define LEFT_ENCODER A0
 #define RIGHT_ENCODER A1
 #define CARRIAGE_ENCODER A2
-// thresholding values
+// threshold values
 #define LEFT_ENCODER_THRESH 512
 #define RIGHT_ENCODER_THRESH 512
 #define CARRIAGE_ENCODER_THRESH 512
@@ -26,14 +26,20 @@ bool CARRIAGE_ENCODER_PREV = false;
 int LEFT_ENCODER_COUNT = 0;
 int RIGHT_ENCODER_COUNT = 0;
 int CARRIAGE_ENCODER_COUNT = 0;
+int n=0;
+
+// pwm parameters for motors
+#define JOHNSON_LEFT_SPEED 140
+#define JOHNSON_RIGHT_SPEED 140
+#define CARRIAGE_MOTOR_SPEED 140
 
 // Declarations for the z-axis stepper motor
-#define stepsPerRevolution 200
+#define stepsPerRevolution 48
 #define STEPPER_PIN_1 A3
 #define STEPPER_PIN_2 A4
 #define STEPPER_PIN_3 A5
 #define STEPPER_PIN_4 A6
-#define STEPPER_SPEED 40
+#define STEPPER_RPM 120
 Stepper z_stepper(stepsPerRevolution, STEPPER_PIN_1, STEPPER_PIN_2, STEPPER_PIN_3, STEPPER_PIN_4);
 
 /*
@@ -52,7 +58,7 @@ Stepper z_stepper(stepsPerRevolution, STEPPER_PIN_1, STEPPER_PIN_2, STEPPER_PIN_
 // Struct containing one command.
 typedef struct node {
   char id;
-  int amt;
+  unsigned int amt;
   struct node *next;
 } node;
 /*
@@ -104,20 +110,22 @@ typedef struct node {
   */
 #define DEBUG_ID 'D'
 
+ /*
+  * WAIT_ID
+  * makes arduino wait for amt number of ms
+  */
+#define WAIT_ID 'W'
+
   
 // HEAD pointer for the queue
-volatile node* HEAD = NULL;
+node* HEAD = NULL;
 
 // TAIL pointer for the queue
-volatile node* TAIL = NULL;
+node* TAIL = NULL;
 
 // temp variable to store incoming command
 char id_tmp = "";
 int amt_tmp = 0;
-
-// indicator variable to check when incoming 
-// command is fully received
-bool commandReceived = false;
 
 // indicator variable to check if the current
 // task is complete
@@ -125,6 +133,8 @@ bool taskComplete = true;
 
 // insert method for instruction queue
 void q(char id, int amt) {
+  Serial.print("inserting=");
+  Serial.println(amt);
   node * temp = (node*) malloc(sizeof(node));
   temp->id = id;
   temp->amt = amt;
@@ -149,6 +159,8 @@ void dq() {
   HEAD = temp->next;
   id = temp->id;
   amt = temp->amt;
+  Serial.print("dq=");
+  Serial.println(amt);
   free(temp);
 }
 
@@ -185,12 +197,13 @@ void setup() {
   PORTB = 0x0e;
 
   // Initialisers for z_stepper
-  z_stepper.setSpeed(STEPPER_SPEED);
+  z_stepper.setSpeed(STEPPER_RPM);
   
   // Initialising serial for communication and debugging
   Serial.begin(9600);
 
   // Blink gantry lights to indicate setup completion
+  Serial.println("everything K");
   digitalWrite(GANTRY_LIGHTS, LOW);
   delay(500);
   digitalWrite(GANTRY_LIGHTS, HIGH);
@@ -201,16 +214,22 @@ void loop() {
 
   // check if command is received
   // if yes, queue it
-  if (commandReceived) {
-    q(id_tmp,amt_tmp);
-    commandReceived = false;
-  }
+//  if (commandReceived) {
+//    Serial.print("amt_tmp=");
+//    Serial.println(amt_tmp);
+//    q(id_tmp,amt_tmp);
+//    commandReceived = false;
+//    id_tmp = 0;
+//    amt_tmp = 0;
+//  }
 
   // pull tasks from instruction queue
   if (qnotempty()) {
     dq();
 
     // check ids
+    Serial.print("amt=");
+    Serial.println(amt);
     if (id==DEBUG_ID) {
       Serial.println("Printing Debug info...");
       Serial.println("Current id="+id);
@@ -218,23 +237,51 @@ void loop() {
       printq();
     } else if (id==GANTRY_LIGHTS_ID) {
       if (amt!=0) {
+        Serial.println("Gantry lights on");
         digitalWrite(GANTRY_LIGHTS, LOW);
+        //delay(3000);
       } else {
         digitalWrite(GANTRY_LIGHTS, HIGH);
+        Serial.println("Gantry lights off");
       }
     } else if (id==SOLENOID_VALVE_ID) {
+      Serial.println("Solenoid valve on");
       digitalWrite(SOLENOID_VALVE_RELAY, LOW);
+      Serial.println(amt);
       delay(amt);
+      Serial.println("Solenoid off");
       digitalWrite(SOLENOID_VALVE_RELAY, HIGH);
     } else if (id==AIR_PUMP_ID) {
       if (amt!=0) {
         digitalWrite(AIR_PUMP_RELAY, LOW);
+        Serial.println("air pump on");
       } else {
         digitalWrite(AIR_PUMP_RELAY, HIGH);
+        Serial.println("air pump off");
       }
     } else if (id==Z_ID) {
+      z_stepper.step(stepsPerRevolution*(amt-25)/10);
+    } else if (id==WAIT_ID) {
+      Serial.println("waiting for");
+      Serial.println(amt);
+      delay(amt);
+      Serial.println("wait over");
+    } else if (id==X_ID) {
+      // x-direction is driven by johnson motors
+      if (amt > count) {
+        //move forward till count reaches amt
+        while (count<=amt) {
+          
+        }
+      }
+    } else if (id==Y_ID) {
       
+    } else {
+      Serial.println("Invalid keyword");
     }
+    Serial.println("===");
+    Serial.println(++n);
+    Serial.println("===");
   }
   
 }
@@ -242,10 +289,14 @@ void loop() {
 void serialEvent() {
   while (Serial.available()) {
     char inChar = (char) Serial.read();
-    if (inChar == '\n') {
-      commandReceived = true;
+    Serial.print("-");
+    Serial.println(inChar);
+    if (inChar == '.') {
+        q(id_tmp,amt_tmp);
+        id_tmp = 0;
+        amt_tmp = 0;
     } else if (inChar>='0' && inChar<='9') {
-      amt_tmp = 10*amt_tmp+(int)(inChar-48);
+      amt_tmp = 10*amt_tmp+(int)(inChar-'0');
     } else {
       id_tmp = inChar;
     }
