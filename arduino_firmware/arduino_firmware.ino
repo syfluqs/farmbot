@@ -15,9 +15,9 @@
 #define RIGHT_ENCODER A1
 #define CARRIAGE_ENCODER A2
 // threshold values
-#define LEFT_ENCODER_THRESH 512
-#define RIGHT_ENCODER_THRESH 512
-#define CARRIAGE_ENCODER_THRESH 512
+#define LEFT_ENCODER_THRESH 850 //600
+#define RIGHT_ENCODER_THRESH 250
+#define CARRIAGE_ENCODER_THRESH 500
 
 // variables for storing encoder state
 bool LEFT_ENCODER_PREV = false;
@@ -30,11 +30,11 @@ int count=0;
 
 // pwm parameters for motors
 // use fast values by default, only use slow for compensation
-#define JOHNSON_LEFT_SPEED_SLOW 140
-#define JOHNSON_LEFT_SPEED_FAST 200
-#define JOHNSON_RIGHT_SPEED_SLOW 140
-#define JOHNSON_RIGHT_SPEED_FAST 200
-#define CARRIAGE_MOTOR_SPEED_SLOW 140
+#define JOHNSON_LEFT_SPEED_SLOW 70
+#define JOHNSON_LEFT_SPEED_FAST 80
+#define JOHNSON_RIGHT_SPEED_SLOW 70
+#define JOHNSON_RIGHT_SPEED_FAST 80
+#define CARRIAGE_MOTOR_SPEED_SLOW 180
 #define CARRIAGE_MOTOR_SPEED_FAST 200
 
 // Declarations for the z-axis stepper motor
@@ -42,8 +42,8 @@ int count=0;
 #define STEPPER_PIN_1 A3
 #define STEPPER_PIN_2 A4
 #define STEPPER_PIN_3 A5
-#define STEPPER_PIN_4 A6
-#define STEPPER_RPM 120
+#define STEPPER_PIN_4 8
+#define STEPPER_RPM 45
 Stepper z_stepper(stepsPerRevolution, STEPPER_PIN_1, STEPPER_PIN_2, STEPPER_PIN_3, STEPPER_PIN_4);
 
 /*
@@ -197,8 +197,9 @@ void setup() {
   
   // Initialiser sequence
   // Set every used GPIO to HIGH because negative logic is used
-  PORTD = 0xfc;
-  PORTB = 0x0e;
+  //PORTD = 0xfc;
+  //PORTB = 0x0e;
+  
 
   // Initialisers for z_stepper
   z_stepper.setSpeed(STEPPER_RPM);
@@ -234,33 +235,34 @@ void loop() {
     // check ids
     Serial.print("amt=");
     Serial.println(amt);
-    if (id==DEBUG_ID) {
-      Serial.println("Printing Debug info...");
-      Serial.println("Current id="+id);
-      Serial.println("Current amt="+amt);
-      printq();
-    } else if (id==GANTRY_LIGHTS_ID) {
+//    if (id==DEBUG_ID) {
+//      Serial.println("Printing Debug info...");
+//      Serial.println("Current id="+id);
+//      Serial.println("Current amt="+amt);
+//      printq();
+//    } else 
+    if (id==GANTRY_LIGHTS_ID) {
       if (amt!=0) {
         Serial.println("Gantry lights on");
-        digitalWrite(GANTRY_LIGHTS, LOW);
+        digitalWrite(GANTRY_LIGHTS, HIGH);
         //delay(3000);
       } else {
-        digitalWrite(GANTRY_LIGHTS, HIGH);
+        digitalWrite(GANTRY_LIGHTS, LOW);
         Serial.println("Gantry lights off");
       }
     } else if (id==SOLENOID_VALVE_ID) {
       Serial.println("Solenoid valve on");
-      digitalWrite(SOLENOID_VALVE_RELAY, LOW);
+      digitalWrite(SOLENOID_VALVE_RELAY, HIGH);
       Serial.println(amt);
       delay(amt);
       Serial.println("Solenoid off");
-      digitalWrite(SOLENOID_VALVE_RELAY, HIGH);
+      digitalWrite(SOLENOID_VALVE_RELAY, LOW);
     } else if (id==AIR_PUMP_ID) {
       if (amt!=0) {
-        digitalWrite(AIR_PUMP_RELAY, LOW);
+        digitalWrite(AIR_PUMP_RELAY, HIGH);
         Serial.println("air pump on");
       } else {
-        digitalWrite(AIR_PUMP_RELAY, HIGH);
+        digitalWrite(AIR_PUMP_RELAY, LOW);
         Serial.println("air pump off");
       }
     } else if (id==Z_ID) {
@@ -286,7 +288,7 @@ void loop() {
         // get analog values from encoder and compare with threshold
         left_enc = (analogRead(LEFT_ENCODER)>LEFT_ENCODER_THRESH);
         right_enc = (analogRead(RIGHT_ENCODER)>RIGHT_ENCODER_THRESH);
-
+        Serial.println("st x");
         if (amt > LEFT_ENCODER_COUNT) {
           // amt is greater than LEFT_ENCODER_COUNT, move forward
           if (LEFT_ENCODER_PREV != left_enc) {
@@ -350,9 +352,15 @@ void loop() {
         } else {
           movement_not_complete = false;
         }
+        delay(50);
       }
+      analogWrite(JOHNSON_RIGHT_1, 0);
+      analogWrite(JOHNSON_RIGHT_2, 0);
+      analogWrite(JOHNSON_LEFT_1, 0);
+      analogWrite(JOHNSON_LEFT_2, 0);
     } else if (id==Y_ID) {
       // movement in y direction
+      Serial.println("Y");
       bool movement_not_complete = true;
       bool enc = (analogRead(CARRIAGE_ENCODER)>CARRIAGE_ENCODER_THRESH);
       while (movement_not_complete) {
@@ -364,16 +372,22 @@ void loop() {
             CARRIAGE_ENCODER_COUNT++;
             CARRIAGE_ENCODER_PREV = enc;
           }
+          analogWrite(CARRIAGE_MOTOR_1, CARRIAGE_MOTOR_SPEED_SLOW);
+          analogWrite(CARRIAGE_MOTOR_2, 0);
         } else if ( amt < CARRIAGE_ENCODER_COUNT) {
           // move the carriage backward
           if (CARRIAGE_ENCODER_PREV != enc) {
             CARRIAGE_ENCODER_COUNT--;
             CARRIAGE_ENCODER_PREV = enc;
           }
+          analogWrite(CARRIAGE_MOTOR_2, CARRIAGE_MOTOR_SPEED_SLOW);
+          analogWrite(CARRIAGE_MOTOR_1, 0);
         } else {
           movement_not_complete = false;
         }
       }
+      analogWrite(CARRIAGE_MOTOR_2, 0);
+      analogWrite(CARRIAGE_MOTOR_1, 0);
     } else {
       Serial.println("Invalid keyword");
     }
